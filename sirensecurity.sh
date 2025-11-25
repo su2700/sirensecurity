@@ -1,0 +1,482 @@
+#!/bin/bash
+# basic_enum.sh - Linux privilege escalation / system recon helper
+# Usage:
+#   chmod +x basic_enum.sh
+#   ./basic_enum.sh
+#
+# Optional environment variables:
+#   TARGET_USER   - user to check group membership (default: $USER)
+#   BOB_USER      - user for "find / -user" (default: bob)
+
+TARGET_USER="${TARGET_USER:-$USER}"
+BOB_USER="${BOB_USER:-bob}"
+
+run_cmd() {
+    local title="$1"
+    shift
+    echo
+    echo "================================================================"
+    echo ">>> $title"
+    echo "----------------------------------------------------------------"
+    bash -c "$*"
+    echo
+}
+
+echo "================================================================"
+echo "  Basic Linux enum script (S1REN-style)"
+echo "  TARGET_USER=${TARGET_USER}, BOB_USER=${BOB_USER}"
+echo "================================================================"
+
+############################
+# 1. Which binaries exist?
+############################
+run_cmd "Which common compilers/interpreters & transfer tools exist?" '
+which gcc 2>/dev/null || echo "gcc: not found"
+which cc 2>/dev/null || echo "cc: not found"
+which python 2>/dev/null || echo "python: not found"
+which python3 2>/dev/null || echo "python3: not found"
+which perl 2>/dev/null || echo "perl: not found"
+which wget 2>/dev/null || echo "wget: not found"
+which curl 2>/dev/null || echo "curl: not found"
+which fetch 2>/dev/null || echo "fetch: not found"
+which nc 2>/dev/null || echo "nc: not found"
+which ncat 2>/dev/null || echo "ncat: not found"
+which nc.traditional 2>/dev/null || echo "nc.traditional: not found"
+which socat 2>/dev/null || echo "socat: not found"
+'
+
+############################
+# 2. System / kernel / arch
+############################
+run_cmd "file /bin/bash (arch + type)" 'file /bin/bash 2>/dev/null'
+run_cmd "Kernel info (uname -a)" 'uname -a 2>/dev/null'
+run_cmd "/etc/issue" 'cat /etc/issue 2>/dev/null'
+run_cmd "/etc/*-release" 'cat /etc/*-release 2>/dev/null'
+
+############################
+# 3. Are we a real user? sudo?
+############################
+run_cmd "sudo -l (may prompt for password)" 'sudo -l 2>/dev/null || echo "sudo -l failed or needs password"'
+run_cmd "Permissions on /etc/sudoers" 'ls -lsaht /etc/sudoers 2>/dev/null'
+
+############################
+# 4. Exotic groups for TARGET_USER
+############################
+run_cmd "Groups for ${TARGET_USER}" "groups ${TARGET_USER} 2>/dev/null || echo 'Cannot get groups for ${TARGET_USER}'"
+
+############################
+# 5. Environment variables
+############################
+run_cmd "Environment (env)" 'env 2>/dev/null'
+
+############################
+# 6. Home directories overview
+############################
+run_cmd "List /home/" 'cd /home 2>/dev/null && ls -lsaht || echo "/home not accessible"'
+
+############################
+# 7. File capabilities (getcap)
+############################
+run_cmd "File capabilities (getcap -r /)" '
+if command -v getcap >/dev/null 2>&1; then
+    getcap -r / 2>/dev/null
+else
+    echo "getcap not installed"
+fi
+'
+
+############################
+# 8. Network information
+############################
+run_cmd "netstat -antup (list TCP connections & listeners)" '
+if command -v netstat >/dev/null 2>&1; then
+    netstat -antup 2>/dev/null
+else
+    echo "netstat not found (try: ss -antup)"
+fi
+'
+
+run_cmd "netstat -tunlp (list TCP/UDP listening ports)" '
+if command -v netstat >/dev/null 2>&1; then
+    netstat -tunlp 2>/dev/null
+else
+    echo "netstat not found (try: ss -tunlp)"
+fi
+'
+
+############################
+# 9. Processes running as root
+############################
+run_cmd "Processes involving root (ps aux | grep -i root)" "ps aux 2>/dev/null | grep -i 'root' --color=auto || echo 'no root processes found (unlikely)'"
+
+############################
+# 10. /etc quick recon
+############################
+run_cmd "Quick look at /etc" 'cd /etc 2>/dev/null && ls -lsaht 2>/dev/null || echo "/etc not accessible"'
+run_cmd "Config files in /etc (*.conf)" "cd /etc 2>/dev/null && ls -lsaht 2>/dev/null | grep -i '\.conf' --color=auto || echo 'no .conf or not listed'"
+run_cmd ".secret-looking files in /etc" "cd /etc 2>/dev/null && ls -lsaht 2>/dev/null | grep -i '\.secret' --color=auto || echo 'no .secret files found or not listed'"
+
+############################
+# 11. SSH keys / home recursion
+############################
+run_cmd "Recursive listing of /home (look for .ssh, config, etc.)" 'ls -lsaR /home 2>/dev/null'
+
+############################
+# 12. Quick look in important dirs
+############################
+run_cmd "ls -lsaht /var/lib" 'ls -lsaht /var/lib 2>/dev/null'
+run_cmd "ls -lsaht /var/db" 'ls -lsaht /var/db 2>/dev/null'
+run_cmd "ls -lsaht /opt" 'ls -lsaht /opt 2>/dev/null'
+run_cmd "ls -lsaht /tmp" 'ls -lsaht /tmp 2>/dev/null'
+run_cmd "ls -lsaht /var/tmp" 'ls -lsaht /var/tmp 2>/dev/null'
+run_cmd "ls -lsaht /dev/shm" 'ls -lsaht /dev/shm 2>/dev/null'
+
+############################
+# 13. File transfer capability recap
+############################
+run_cmd "Transfer tools recap + FTP-like binaries" '
+which wget 2>/dev/null || echo "wget: not found"
+which curl 2>/dev/null || echo "curl: not found"
+which nc 2>/dev/null || echo "nc: not found"
+which ncat 2>/dev/null || echo "ncat: not found"
+which socat 2>/dev/null || echo "socat: not found"
+which fetch 2>/dev/null || echo "fetch: not found"
+ls -lsaht /bin 2>/dev/null | grep -i "ftp" --color=auto || echo "no ftp-related binary clearly visible in /bin"
+'
+
+############################
+# 14. NFS exports (potential NFS attacks)
+############################
+run_cmd "/etc/exports (NFS shares)" 'cat /etc/exports 2>/dev/null || echo "/etc/exports not present or not readable"'
+
+############################
+# 15. Where can we live? (temp dirs)
+############################
+run_cmd "Tmp-like dirs (/tmp, /var/tmp, /dev/shm) permissions" '
+ls -ld /tmp 2>/dev/null
+ls -ld /var/tmp 2>/dev/null
+ls -ld /dev/shm 2>/dev/null
+'
+
+############################
+# 16. fstab (exotic mounts / options)
+############################
+run_cmd "/etc/fstab (mounts & options)" 'cat /etc/fstab 2>/dev/null'
+
+############################
+# 17. Cron jobs
+############################
+run_cmd "User crontab for root (may need sudo)" 'crontab -u root -l 2>/dev/null || echo "cannot read root crontab (try sudo)"'
+run_cmd "System-wide crontab" 'cat /etc/crontab 2>/dev/null'
+run_cmd "/etc/cron.* directories" 'ls -lsaht /etc/cron.* 2>/dev/null'
+
+############################
+# 18. Files owned by BOB_USER
+############################
+run_cmd "All files owned by user ${BOB_USER}" "find / -user '${BOB_USER}' 2>/dev/null || echo 'no files found for ${BOB_USER} or find error'"
+
+############################
+# 19. Mailboxes
+############################
+run_cmd "Mail in /var/mail" 'ls -lsaht /var/mail 2>/dev/null'
+run_cmd "Mail in /var/spool/mail" 'ls -lsaht /var/spool/mail 2>/dev/null'
+
+############################
+# 20. Web configs / web root
+############################
+run_cmd "Web root /var/www/html (if exists)" 'ls -lsaht /var/www/html 2>/dev/null || echo "/var/www/html not present or not accessible"'
+
+############################
+# 21. SUID / GUID binaries
+############################
+run_cmd "SUID binaries (find / -perm -u=s -type f)" 'find / -perm -u=s -type f 2>/dev/null'
+run_cmd "GUID binaries (find / -perm -g=s -type f)" 'find / -perm -g=s -type f 2>/dev/null'
+
+############################
+# 22. EXTRA: check your big list of interesting files
+############################
+run_cmd "Extra interesting config/log/cred files (existence + first lines)" '
+FILES="
+/etc/passwd
+/etc/shadow
+/etc/aliases
+/etc/anacrontab
+/etc/apache2/apache2.conf
+/etc/apache2/httpd.conf
+/etc/apache2/sites-enabled/000-default.conf
+/etc/at.allow
+/etc/at.deny
+/etc/bashrc
+/etc/bootptab
+/etc/chrootUsers
+/etc/chttp.conf
+/etc/cron.allow
+/etc/cron.deny
+/etc/crontab
+/etc/cups/cupsd.conf
+/etc/exports
+/etc/fstab
+/etc/ftpaccess
+/etc/ftpchroot
+/etc/ftphosts
+/etc/groups
+/etc/grub.conf
+/etc/hosts
+/etc/hosts.allow
+/etc/hosts.deny
+/etc/httpd/access.conf
+/etc/httpd/conf/httpd.conf
+/etc/httpd/httpd.conf
+/etc/httpd/logs/access_log
+/etc/httpd/logs/access.log
+/etc/httpd/logs/error_log
+/etc/httpd/logs/error.log
+/etc/httpd/php.ini
+/etc/httpd/srm.conf
+/etc/inetd.conf
+/etc/inittab
+/etc/issue
+/etc/knockd.conf
+/etc/lighttpd.conf
+/etc/lilo.conf
+/etc/logrotate.d/ftp
+/etc/logrotate.d/proftpd
+/etc/logrotate.d/vsftpd.log
+/etc/lsb-release
+/etc/motd
+/etc/modules.conf
+/etc/mtab
+/etc/my.cnf
+/etc/my.conf
+/etc/mysql/my.cnf
+/etc/network/interfaces
+/etc/networks
+/etc/npasswd
+/etc/php.ini
+/etc/proftp.conf
+/etc/proftpd/proftpd.conf
+/etc/pure-ftpd.conf
+/etc/pureftpd.passwd
+/etc/pureftpd.pdb
+/etc/pure-ftpd/pure-ftpd.conf
+/etc/pure-ftpd/pure-ftpd.pdb
+/etc/pure-ftpd/putreftpd.pdb
+/etc/redhat-release
+/etc/resolv.conf
+/etc/samba/smb.conf
+/etc/snmpd.conf
+/etc/ssh/ssh_config
+/etc/ssh/sshd_config
+/etc/ssh/ssh_host_dsa_key
+/etc/ssh/ssh_host_dsa_key.pub
+/etc/ssh/ssh_host_key
+/etc/ssh/ssh_host_key.pub
+/etc/sysconfig/network
+/etc/syslog.conf
+/etc/termcap
+/etc/vhcs2/proftpd/proftpd.conf
+/etc/vsftpd.chroot_list
+/etc/vsftpd.conf
+/etc/vsftpd/vsftpd.conf
+/etc/wu-ftpd/ftpaccess
+/etc/wu-ftpd/ftphosts
+/etc/wu-ftpd/ftpusers
+/logs/pure-ftpd.log
+/logs/security_debug_log
+/logs/security_log
+/opt/lampp/etc/httpd.conf
+/opt/xampp/etc/php.ini
+/proc/cmdline
+/proc/cpuinfo
+/proc/filesystems
+/proc/interrupts
+/proc/ioports
+/proc/meminfo
+/proc/modules
+/proc/mounts
+/proc/net/arp
+/proc/net/tcp
+/proc/net/udp
+/proc/sched_debug
+/proc/self/cwd/app.py
+/proc/self/environ
+/proc/self/net/arp
+/proc/stat
+/proc/swaps
+/proc/version
+/root/anaconda-ks.cfg
+/usr/etc/pure-ftpd.conf
+/usr/lib/php.ini
+/usr/lib/php/php.ini
+/usr/local/apache/conf/modsec.conf
+/usr/local/apache/conf/php.ini
+/usr/local/apache/log
+/usr/local/apache/logs
+/usr/local/apache/logs/access_log
+/usr/local/apache/logs/access.log
+/usr/local/apache/audit_log
+/usr/local/apache/error_log
+/usr/local/apache/error.log
+/usr/local/cpanel/logs
+/usr/local/cpanel/logs/access_log
+/usr/local/cpanel/logs/error_log
+/usr/local/cpanel/logs/license_log
+/usr/local/cpanel/logs/login_log
+/usr/local/cpanel/logs/stats_log
+/usr/local/etc/httpd/logs/access_log
+/usr/local/etc/httpd/logs/error_log
+/usr/local/etc/php.ini
+/usr/local/etc/pure-ftpd.conf
+/usr/local/etc/pureftpd.pdb
+/usr/local/lib/php.ini
+/usr/local/php4/httpd.conf
+/usr/local/php4/httpd.conf.php
+/usr/local/php4/lib/php.ini
+/usr/local/php5/httpd.conf
+/usr/local/php5/httpd.conf.php
+/usr/local/php5/lib/php.ini
+/usr/local/php/httpd.conf
+/usr/local/php/httpd.conf.ini
+/usr/local/php/lib/php.ini
+/usr/local/pureftpd/etc/pure-ftpd.conf
+/usr/local/pureftpd/etc/pureftpd.pdn
+/usr/local/pureftpd/sbin/pure-config.pl
+/usr/local/www/logs/httpd_log
+/usr/local/Zend/etc/php.ini
+/usr/sbin/pure-config.pl
+/var/adm/log/xferlog
+/var/apache2/config.inc
+/var/apache/logs/access_log
+/var/apache/logs/error_log
+/var/cpanel/cpanel.config
+/var/lib/mysql/my.cnf
+/var/lib/mysql/mysql/user.MYD
+/var/local/www/conf/php.ini
+/var/log/apache2/access_log
+/var/log/apache2/access.log
+/var/log/apache2/error_log
+/var/log/apache2/error.log
+/var/log/apache/access_log
+/var/log/apache/access.log
+/var/log/apache/error_log
+/var/log/apache/error.log
+/var/log/apache-ssl/access.log
+/var/log/apache-ssl/error.log
+/var/log/auth.log
+/var/log/boot
+/var/htmp
+/var/log/chttp.log
+/var/log/cups/error.log
+/var/log/daemon.log
+/var/log/debug
+/var/log/dmesg
+/var/log/dpkg.log
+/var/log/exim_mainlog
+/var/log/exim/mainlog
+/var/log/exim_paniclog
+/var/log/exim.paniclog
+/var/log/exim_rejectlog
+/var/log/exim/rejectlog
+/var/log/faillog
+/var/log/ftplog
+/var/log/ftp-proxy
+/var/log/ftp-proxy/ftp-proxy.log
+/var/log/httpd-access.log
+/var/log/httpd/access_log
+/var/log/httpd/access.log
+/var/log/httpd/error_log
+/var/log/httpd/error.log
+/var/log/httpsd/ssl.access_log
+/var/log/httpsd/ssl_log
+/var/log/kern.log
+/var/log/lastlog
+/var/log/lighttpd/access.log
+/var/log/lighttpd/error.log
+/var/log/lighttpd/lighttpd.access.log
+/var/log/lighttpd/lighttpd.error.log
+/var/log/mail.info
+/var/log/mail.log
+/var/log/maillog
+/var/log/mail.warn
+/var/log/message
+/var/log/messages
+/var/log/mysqlderror.log
+/var/log/mysql.log
+/var/log/mysql/mysql-bin.log
+/var/log/mysql/mysql.log
+/var/log/mysql/mysql-slow.log
+/var/log/proftpd
+/var/log/pureftpd.log
+/var/log/pure-ftpd/pure-ftpd.log
+/var/log/secure
+/var/log/vsftpd.log
+/var/log/wtmp
+/var/log/xferlog
+/var/log/yum.log
+/var/mysql.log
+/var/run/utmp
+/var/spool/cron/crontabs/root
+/var/webmin/miniserv.log
+/var/www/html/db_connect.php
+/var/www/html/utils.php
+/var/www/log/access_log
+/var/www/log/error_log
+/var/www/logs/access_log
+/var/www/logs/error_log
+/var/www/logs/access.log
+/var/www/logs/error.log
+~/.atfp_history
+~/.bash_history
+~/.bash_logout
+~/.bash_profile
+~/.bashrc
+~/.gtkrc
+~/.login
+~/.logout
+~/.mysql_history
+~/.nano_history
+~/.php_history
+~/.profile
+~/.ssh/authorized_keys
+~/.ssh/id_dsa
+~/.ssh/id_dsa.pub
+~/.ssh/id_rsa
+~/.ssh/id_rsa.pub
+~/.ssh/identity
+~/.ssh/identity.pub
+~/.viminfo
+~/.wm_style
+~/.Xdefaults
+~/.xinitrc
+~/.Xresources
+~/.xsession
+"
+
+for f in $FILES; do
+    # expand ~ manually
+    case "$f" in
+        ~/*) path="$HOME${f#~}" ;;
+        *)   path="$f" ;;
+    esac
+
+    if [ -f "$path" ]; then
+        echo "[+] $path"
+        ls -lsaht "$path" 2>/dev/null
+        head -n 10 "$path" 2>/dev/null
+        echo
+    fi
+done
+'
+
+############################
+# 23. Reminder about pspy
+############################
+echo
+echo "================================================================"
+echo "pspy REMINDER (not run automatically):"
+echo "  # Example:"
+echo "  cd /var/tmp/"
+echo "  chmod 755 pspy32 pspy64"
+echo "  ./pspy64 -r /bin,/etc,/home,/opt,/var,/usr,/tmp -pf -i 1000"
+echo "================================================================"
+echo
