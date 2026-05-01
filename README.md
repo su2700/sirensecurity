@@ -2,8 +2,16 @@
 
 A comprehensive, well-structured Linux privilege escalation and system reconnaissance script designed for security professionals and penetration testers.
 
-## Overview
+## 🚀 Version 2.0 (Stable)
+The primary script is `sirensecurity.sh`. It has been recently **reconstructed and verified** to ensure a clean, modular, and error-free execution environment.
 
+### Key Improvements in v2.0
+- **Modular Architecture:** 16 separate security domains encapsulated in functions.
+- **Enhanced Reliability:** Improved error trapping and graceful command fallbacks.
+- **Visual Clarity:** Full color-coded output (Blue: Sections, Cyan: Subsections, Green: Success).
+- **Modern Support:** Native support for `systemd`, `ss`, `ip addr`, and modern package managers.
+
+## Overview
 This script provides automated enumeration of Linux systems with a focus on:
 - System fingerprinting and OS detection
 - Privilege escalation vectors
@@ -147,24 +155,22 @@ sudo TARGET_USER=admin ./sirensecurity.sh
 
 The script produces organized output divided into 16 clear sections:
 
-```
-1. System Information & Fingerprinting
-2. Current User & Privileges
-3. Environment & Configuration
-4. Running Processes & Services
-5. Installed Software & Packages
-6. Network & Communications
-7. Scheduled Jobs & Cron
-8. File Permissions & Security
-9. File Systems & Mounts
-10. Users & Accounts
-11. Sensitive Files & Data
-12. Service Configuration Files
-13. Log Files & Important Directories
-14. Credential Search
-15. File Transfer & Communication Tools
-16. Miscellaneous Checks
-```
+1.  **System Information & Fingerprinting**
+2.  **Current User & Privileges**
+3.  **Environment & Configuration**
+4.  **Running Processes & Services**
+5.  **Installed Software & Packages**
+6.  **Network & Communications**
+7.  **Scheduled Jobs & Cron**
+8.  **File Permissions & Security**
+9.  **File Systems & Mounts**
+10. **Users & Accounts**
+11. **Sensitive Files & Data**
+12. **Service Configuration Files**
+13. **Log Files & Important Directories**
+14. **Credential Search**
+15. **File Transfer & Communication Tools**
+16. **Miscellaneous Checks**
 
 ## Key Improvements Over Previous Versions
 
