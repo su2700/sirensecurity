@@ -8,7 +8,9 @@ The primary script is `sirensecurity.sh`. It has been recently **reconstructed a
 ### Key Improvements in v2.0
 - **Modular Architecture:** 16 separate security domains encapsulated in functions.
 - **Enhanced Reliability:** Improved error trapping and graceful command fallbacks.
-- **Visual Clarity:** Full color-coded output (Blue: Sections, Cyan: Subsections, Green: Success).
+- **Visual Clarity:** Full color-coded output and emoji-based visual anchoring for better scannability.
+- **ADHD-Friendly Design:** Progress tracking (e.g., "1 of 16") and a final "High-Interest Findings" summary.
+- **Interactive Mode:** New `--interactive` flag to pause between sections, preventing information overload.
 - **Modern Support:** Native support for `systemd`, `ss`, `ip addr`, and modern package managers.
 
 ## Overview
@@ -21,6 +23,13 @@ This script provides automated enumeration of Linux systems with a focus on:
 - Credential harvesting opportunities
 
 ## Features
+
+### 🧠 ADHD-Friendly Features
+Designed to improve focus and manage information density:
+- **Interactive Mode (`-i` / `--interactive`)**: Pauses execution between sections, allowing you to review findings at your own pace without being overwhelmed by a "wall of text."
+- **Progress Tracking**: Real-time counters (e.g., `(1/16)`) on every section header to provide a clear sense of movement and completion.
+- **Visual Anchoring**: High-contrast emojis (🛡️, 🔍, 🔑, 🔓, 📜) act as visual landmarks for different types of findings.
+- **Summary of Interest**: A dedicated "High-Interest Findings" summary at the end of the run, distilling the most critical escalation vectors into one scannable list.
 
 ### 🎯 16 Major Assessment Categories
 
@@ -124,6 +133,14 @@ chmod +x sirensecurity.sh
 ./sirensecurity.sh
 ```
 
+### Interactive Mode (ADHD-Friendly)
+Pauses between sections to prevent information overload.
+```bash
+./sirensecurity.sh -i
+# OR
+./sirensecurity.sh --interactive
+```
+
 ### With Custom Parameters
 ```bash
 # Specify a different target user
@@ -221,10 +238,10 @@ Each section follows this pattern:
 
 ```
 ================================================================
->>> Section Title
+>>> (1/16) Section Title
 ================================================================
 
-[*] Subsection Title
+🔍 [*] Subsection Title
 ----------------------------------------------------------------
 command output here
 ```
@@ -232,8 +249,10 @@ command output here
 Color-coded for easy visual scanning:
 - **Blue**: Section headers
 - **Cyan**: Subsection headers
-- **Green**: Success indicators
-- **Default**: Command output
+- **Green**: Success indicators and findings
+- **Red**: Failures, errors, or missing tools
+- **Yellow**: General info and configuration data
+- **Emojis**: Visual landmarks for findings (🔑, 🔓, 📜)
 
 ## Requirements
 
