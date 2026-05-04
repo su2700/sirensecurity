@@ -4,33 +4,54 @@
 # Description: Comprehensive Linux enumeration and privilege escalation discovery script.
 
 set -o errexit
-trap 'echo "[ERROR] An error occurred at line $LINENO"' ERR
+
+# Color codes
+COLOR_SECTION="\033[1;34m"    # Blue
+COLOR_SUBSECTION="\033[1;36m" # Cyan
+COLOR_SUCCESS="\033[1;32m"    # Green
+COLOR_FAILURE="\033[1;31m"    # Red
+COLOR_INFO="\033[1;33m"       # Yellow
+COLOR_RESET="\033[0m"
+
+trap 'echo -e "${COLOR_FAILURE}[ERROR] An error occurred at line $LINENO${COLOR_RESET}"' ERR
 
 # Configuration
 TARGET_USER="${TARGET_USER:-$USER}"
 BOB_USER="${BOB_USER:-bob}"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 OUTPUT_DIR="${OUTPUT_DIR:-.}"
+INTERACTIVE_MODE=false
+SECTION_COUNT=0
+TOTAL_SECTIONS=16
 
-# Color codes
-COLOR_SECTION="\033[1;34m"    # Blue
-COLOR_SUBSECTION="\033[1;36m" # Cyan
-COLOR_SUCCESS="\033[1;32m"    # Green
-COLOR_RESET="\033[0m"
+# Check for flags
+for arg in "$@"; do
+    if [ "$arg" == "--interactive" ] || [ "$arg" == "-i" ]; then
+        INTERACTIVE_MODE=true
+    fi
+done
+
+# Highlight collector for ADHD-friendly summary
+HIGHLIGHTS=""
+
+add_highlight() {
+    HIGHLIGHTS="${HIGHLIGHTS}\n${COLOR_SUCCESS}  [!] $1${COLOR_RESET}"
+}
 
 # Utility Functions
 print_section() {
     local title="$1"
+    SECTION_COUNT=$((SECTION_COUNT + 1))
     echo
-    echo "================================================================"
-    echo -e "${COLOR_SECTION}>>> ${title}${COLOR_RESET}"
-    echo "================================================================"
+    echo -e "${COLOR_SECTION}================================================================${COLOR_RESET}"
+    echo -e "${COLOR_SECTION}>>> (${SECTION_COUNT}/${TOTAL_SECTIONS}) ${title}${COLOR_RESET}"
+    echo -e "${COLOR_SECTION}================================================================${COLOR_RESET}"
 }
 
 print_subsection() {
     local title="$1"
     echo
-    echo -e "${COLOR_SUBSECTION}[*] ${title}${COLOR_RESET}"
+    echo -e "${COLOR_SUBSECTION}🔍 [*] ${title}${COLOR_RESET}"
     echo "----------------------------------------------------------------"
 }
 
@@ -38,7 +59,7 @@ run_cmd() {
     local title="$1"
     shift
     print_subsection "$title"
-    bash -c "$*" 2>/dev/null || echo "[!] Command failed or not available"
+    bash -c "$*" 2>/dev/null || echo -e "${COLOR_FAILURE}❌ [!] Command failed or not available${COLOR_RESET}"
     echo
 }
 
@@ -47,9 +68,16 @@ run_cmd_safe() {
     shift
     print_subsection "$title"
     if ! bash -c "$*" 2>/dev/null; then
-        echo "[!] $title - Command failed or not available"
+        echo -e "${COLOR_FAILURE}❌ [!] $title - Command failed or not available${COLOR_RESET}"
     fi
     echo
+}
+
+pause_for_focus() {
+    if [ "$INTERACTIVE_MODE" = true ]; then
+        echo -e "${COLOR_INFO}☕ Section complete. Press [ENTER] to continue...${COLOR_RESET}"
+        read -r
+    fi
 }
 
 # 1. SYSTEM INFORMATION & FINGERPRINTING
@@ -76,7 +104,15 @@ section_user_privileges() {
     run_cmd "Current User (id)" "id"
     run_cmd "Current User (whoami)" "whoami"
     run_cmd "Groups for ${TARGET_USER}" "groups ${TARGET_USER}"
-    run_cmd "sudo Configuration (sudo -l)" "sudo -l 2>&1"
+    
+    print_subsection "sudo Configuration (sudo -l)"
+    if sudo -l 2>&1 | grep -q "(ALL : ALL) ALL\|(ALL) ALL\|NOPASSWD"; then
+        add_highlight "High-privilege sudo rights found!"
+        sudo -l 2>&1
+    else
+        sudo -l 2>&1 || echo -e "${COLOR_FAILURE}❌ [!] sudo -l failed${COLOR_RESET}"
+    fi
+    
     run_cmd "/etc/sudoers Permissions" "ls -lah /etc/sudoers"
     run_cmd "sudo Files" "find /etc/sudoers.d -type f"
 }
@@ -88,7 +124,7 @@ section_environment() {
     print_subsection "Bash Profiles (System-wide)"
     for file in /etc/profile /etc/bashrc /etc/bash.bashrc; do
         if [ -f "$file" ]; then
-            echo "[+] $file"
+            echo -e "${COLOR_SUCCESS}[+] Found: $file${COLOR_RESET}"
             head -20 "$file"
             echo
         fi
@@ -96,7 +132,7 @@ section_environment() {
     print_subsection "Bash Profiles (User)"
     for file in ~/.bash_profile ~/.bashrc ~/.bash_logout ~/.profile; do
         if [ -f "$file" ]; then
-            echo "[+] $file"
+            echo -e "${COLOR_SUCCESS}[+] Found: $file${COLOR_RESET}"
             head -20 "$file"
             echo
         fi
@@ -120,7 +156,7 @@ section_packages() {
     print_subsection "Development Tools"
     for tool in gcc cc python python3 perl perl5 ruby java javac; do
         if which "$tool" >/dev/null 2>&1; then
-            echo "[+] $tool found: $(which $tool)"
+            echo -e "${COLOR_SUCCESS}[+] $tool found: $(which $tool)${COLOR_RESET}"
         fi
     done
     run_cmd "Debian Packages (dpkg -l)" "dpkg -l | head -100"
@@ -160,7 +196,7 @@ section_cron() {
     print_subsection "Cron Directories"
     for dir in /etc/cron.d /etc/cron.daily /etc/cron.weekly /etc/cron.monthly /etc/cron.hourly; do
         if [ -d "$dir" ]; then
-            echo "[+] $dir"
+            echo -e "${COLOR_SUCCESS}[+] Found: $dir${COLOR_RESET}"
             ls -lah "$dir" | head -20
             echo
         fi
@@ -175,13 +211,23 @@ section_cron() {
 # 8. FILE PERMISSIONS & SECURITY
 section_file_permissions() {
     print_section "8. FILE PERMISSIONS & SECURITY"
-    run_cmd "SUID Files" "find / -perm -4000 -type f 2>/dev/null | head -50"
+    
+    print_subsection "SUID Files"
+    local suid_files=$(find / -perm -4000 -type f 2>/dev/null | head -50)
+    if [ -n "$suid_files" ]; then
+        local suid_count=$(echo "$suid_files" | wc -l)
+        add_highlight "Found $suid_count SUID files (check for vulnerabilities)"
+        echo "$suid_files"
+    else
+        echo "No SUID files found."
+    fi
+
     run_cmd "SGID Files" "find / -perm -2000 -type f 2>/dev/null | head -50"
     run_cmd "Sticky Bit" "find / -perm -1000 -type d 2>/dev/null | head -30"
     print_subsection "World-Writable Locations"
     for dir in /tmp /var/tmp /dev/shm; do
         if [ -d "$dir" ]; then
-            echo "[+] $dir Permissions:"
+            echo -e "${COLOR_SUCCESS}[+] $dir Permissions:${COLOR_RESET}"
             ls -ld "$dir"
             echo
         fi
@@ -206,7 +252,7 @@ section_users() {
     run_cmd "Group List (/etc/group)" "cat /etc/group"
     run_cmd "Shadow File (/etc/shadow)" "cat /etc/shadow"
     print_subsection "User Accounts with UID 0"
-    grep -v -E '^#' /etc/passwd | awk -F: '$3 == 0 { print $0 }' || echo "[!] Cannot read /etc/passwd"
+    grep -v -E '^#' /etc/passwd | awk -F: '$3 == 0 { print $0 }' || echo -e "${COLOR_FAILURE}[!] Cannot read /etc/passwd${COLOR_RESET}"
     run_cmd "Currently Logged In Users" "who"
     run_cmd "Login History" "last | head -30"
     run_cmd "User Sessions" "w"
@@ -218,7 +264,8 @@ section_sensitive_files() {
     print_subsection "SSH Keys & Configuration"
     for file in ~/.ssh/id_rsa ~/.ssh/id_dsa ~/.ssh/id_rsa.pub ~/.ssh/id_dsa.pub ~/.ssh/authorized_keys; do
         if [ -f "$file" ]; then
-            echo "[+] Found: $file"
+            echo -e "${COLOR_SUCCESS}🔓 [+] Found: $file${COLOR_RESET}"
+            add_highlight "Found SSH key: $file"
             ls -lah "$file"
             echo
         fi
@@ -229,7 +276,7 @@ section_sensitive_files() {
     print_subsection "System SSH Keys"
     for file in /etc/ssh/ssh_host_*_key*; do
         if [ -f "$file" ]; then
-            echo "[+] $file"
+            echo -e "${COLOR_SUCCESS}🔓 [+] Found: $file${COLOR_RESET}"
             ls -lah "$file"
             echo
         fi
@@ -237,7 +284,7 @@ section_sensitive_files() {
     print_subsection "Command Histories"
     for file in ~/.bash_history ~/.mysql_history ~/.php_history ~/.nano_history; do
         if [ -f "$file" ]; then
-            echo "[+] Found: $file"
+            echo -e "${COLOR_SUCCESS}📜 [+] Found: $file${COLOR_RESET}"
             ls -lah "$file"
             echo "--- Last 10 lines ---"
             tail -10 "$file"
@@ -252,7 +299,7 @@ section_configs() {
     print_subsection "Web Server Configurations"
     for file in /etc/apache2/apache2.conf /etc/httpd/conf/httpd.conf /etc/nginx/nginx.conf /etc/lighttpd/lighttpd.conf; do
         if [ -f "$file" ]; then
-            echo "[+] $file"
+            echo -e "${COLOR_SUCCESS}[+] Found: $file${COLOR_RESET}"
             head -30 "$file"
             echo
         fi
@@ -260,7 +307,7 @@ section_configs() {
     print_subsection "Database Configurations"
     for file in /etc/mysql/my.cnf /etc/my.cnf /etc/postgresql/postgresql.conf; do
         if [ -f "$file" ]; then
-            echo "[+] $file"
+            echo -e "${COLOR_SUCCESS}[+] Found: $file${COLOR_RESET}"
             head -30 "$file"
             echo
         fi
@@ -277,7 +324,7 @@ section_logs() {
     print_subsection "System Logs"
     for dir in /var/log /var/adm/log; do
         if [ -d "$dir" ]; then
-            echo "[+] $dir"
+            echo -e "${COLOR_SUCCESS}[+] Found: $dir${COLOR_RESET}"
             ls -lah "$dir" | head -30
             echo
         fi
@@ -285,7 +332,7 @@ section_logs() {
     print_subsection "Web Server Logs"
     for dir in /var/log/apache2 /var/log/httpd /var/log/nginx; do
         if [ -d "$dir" ]; then
-            echo "[+] $dir"
+            echo -e "${COLOR_SUCCESS}[+] Found: $dir${COLOR_RESET}"
             ls -lah "$dir"
             echo
         fi
@@ -293,7 +340,7 @@ section_logs() {
     print_subsection "Important Directories"
     for dir in /opt /var/www /var/www/html /srv/www; do
         if [ -d "$dir" ]; then
-            echo "[+] $dir (first 20 items)"
+            echo -e "${COLOR_SUCCESS}[+] Found: $dir (first 20 items)${COLOR_RESET}"
             ls -lah "$dir" | head -20
             echo
         fi
@@ -306,7 +353,8 @@ section_credentials() {
     print_subsection "PHP Database Credentials"
     find /var/www /opt /srv -name "*.php" -type f 2>/dev/null | while read file; do
         if grep -qi "password\|passwd\|user\|db_" "$file" 2>/dev/null; then
-            echo "[+] Potential credentials in: $file"
+            echo -e "${COLOR_SUCCESS}🔑 [+] Potential credentials in: $file${COLOR_RESET}"
+            add_highlight "Potential credentials in PHP file: $file"
             grep -i "password\|passwd\|user\|db_" "$file" | head -5
             echo
         fi
@@ -320,25 +368,25 @@ section_transfer_tools() {
     print_subsection "File Transfer Tools"
     for tool in wget curl fetch ftp scp sftp rsync; do
         if command -v "$tool" >/dev/null 2>&1; then
-            echo "[+] $tool: $(which $tool)"
+            echo -e "${COLOR_SUCCESS}[+] $tool: $(which $tool)${COLOR_RESET}"
         else
-            echo "[-] $tool: not found"
+            echo -e "${COLOR_FAILURE}[-] $tool: not found${COLOR_RESET}"
         fi
     done
     print_subsection "Network Tools"
     for tool in nc ncat netcat socat telnet ssh; do
         if command -v "$tool" >/dev/null 2>&1; then
-            echo "[+] $tool: $(which $tool)"
+            echo -e "${COLOR_SUCCESS}[+] $tool: $(which $tool)${COLOR_RESET}"
         else
-            echo "[-] $tool: not found"
+            echo -e "${COLOR_FAILURE}[-] $tool: not found${COLOR_RESET}"
         fi
     done
     print_subsection "Packet Capture"
     for tool in tcpdump wireshark tshark; do
         if command -v "$tool" >/dev/null 2>&1; then
-            echo "[+] $tool: $(which $tool)"
+            echo -e "${COLOR_SUCCESS}[+] $tool: $(which $tool)${COLOR_RESET}"
         else
-            echo "[-] $tool: not found"
+            echo -e "${COLOR_FAILURE}[-] $tool: not found${COLOR_RESET}"
         fi
     done
 }
@@ -354,35 +402,47 @@ section_misc() {
 # Main Execution Loop
 main() {
     clear
-    echo "================================================================================"
-    echo "             SIREN Security - Linux Reconnaissance & Audit Tool"
-    echo "================================================================================"
-    echo "Target User: ${TARGET_USER}"
-    echo "Search User: ${BOB_USER}"
-    echo "Start Time: $(date '+%Y-%m-%d %H:%M:%S')"
-    echo "================================================================================"
+    echo -e "${COLOR_SECTION}================================================================================${COLOR_RESET}"
+    echo -e "${COLOR_SECTION}             🛡️  SIREN Security - Linux Reconnaissance & Audit Tool${COLOR_RESET}"
+    echo -e "${COLOR_SECTION}================================================================================${COLOR_RESET}"
+    echo -e "${COLOR_INFO}👤 Target User:${COLOR_RESET} ${TARGET_USER}"
+    echo -e "${COLOR_INFO}📂 Search User:${COLOR_RESET} ${BOB_USER}"
+    echo -e "${COLOR_INFO}⏰ Start Time: ${COLOR_RESET} $(date '+%Y-%m-%d %H:%M:%S')"
+    if [ "$INTERACTIVE_MODE" = true ]; then
+        echo -e "${COLOR_SUCCESS}🎮 Interactive Mode: ON (Pausing between sections)${COLOR_RESET}"
+    else
+        echo -e "${COLOR_INFO}⚡ Running in non-interactive mode. (Use -i for pauses)${COLOR_RESET}"
+    fi
+    echo -e "${COLOR_SECTION}================================================================================${COLOR_RESET}"
 
-    section_system_info
-    section_user_privileges
-    section_environment
-    section_processes
-    section_packages
-    section_network
-    section_cron
-    section_file_permissions
-    section_filesystems
-    section_users
-    section_sensitive_files
-    section_configs
-    section_logs
-    section_credentials
-    section_transfer_tools
-    section_misc
+    section_system_info; pause_for_focus
+    section_user_privileges; pause_for_focus
+    section_environment; pause_for_focus
+    section_processes; pause_for_focus
+    section_packages; pause_for_focus
+    section_network; pause_for_focus
+    section_cron; pause_for_focus
+    section_file_permissions; pause_for_focus
+    section_filesystems; pause_for_focus
+    section_users; pause_for_focus
+    section_sensitive_files; pause_for_focus
+    section_configs; pause_for_focus
+    section_logs; pause_for_focus
+    section_credentials; pause_for_focus
+    section_transfer_tools; pause_for_focus
+    section_misc; pause_for_focus
 
-    echo "================================================================================"
-    echo "                          Reconnaissance Complete!"
-    echo "                          End Time: $(date '+%Y-%m-%d %H:%M:%S')"
-    echo "================================================================================"
+    echo
+    echo -e "${COLOR_SECTION}================================================================================${COLOR_RESET}"
+    echo -e "${COLOR_SUCCESS}                          ✨ Reconnaissance Complete! ✨${COLOR_RESET}"
+    
+    if [ -n "$HIGHLIGHTS" ]; then
+        echo -e "\n${COLOR_INFO}🚩 HIGH-INTEREST FINDINGS SUMMARY:${COLOR_RESET}"
+        echo -e "$HIGHLIGHTS"
+    fi
+
+    echo -e "\n${COLOR_INFO}                          End Time: $(date '+%Y-%m-%d %H:%M:%S')${COLOR_RESET}"
+    echo -e "${COLOR_SECTION}================================================================================${COLOR_RESET}"
 }
 
 main "$@"
