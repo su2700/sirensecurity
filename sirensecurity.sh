@@ -18,6 +18,7 @@ trap 'echo -e "${COLOR_FAILURE}[ERROR] An error occurred at line $LINENO${COLOR_
 # Configuration
 TARGET_USER="${TARGET_USER:-$USER}"
 BOB_USER="${BOB_USER:-bob}"
+USER_PASSWORD=""
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 OUTPUT_DIR="${OUTPUT_DIR:-.}"
 INTERACTIVE_MODE=false
@@ -25,11 +26,31 @@ SECTION_COUNT=0
 TOTAL_SECTIONS=16
 
 # Check for flags
-for arg in "$@"; do
-    if [ "$arg" == "--interactive" ] || [ "$arg" == "-i" ]; then
-        INTERACTIVE_MODE=true
-    fi
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -i|--interactive) INTERACTIVE_MODE=true ;;
+        -p|--password) 
+            if [ -n "$2" ] && [[ ! "$2" =~ ^- ]]; then
+                USER_PASSWORD="$2"
+                shift
+            else
+                echo -e "${COLOR_FAILURE}[!] Error: -p/--password requires an argument${COLOR_RESET}"
+                exit 1
+            fi
+            ;;
+        *) ;; # Ignore unknown arguments
+    esac
+    shift
 done
+
+# Helper for sudo commands
+run_sudo() {
+    if [ -n "$USER_PASSWORD" ]; then
+        echo "$USER_PASSWORD" | sudo -S -p '' "$@"
+    else
+        sudo "$@"
+    fi
+}
 
 # Highlight collector for ADHD-friendly summary
 HIGHLIGHTS=""
@@ -58,17 +79,29 @@ print_subsection() {
 run_cmd() {
     local title="$1"
     shift
+    local cmd="$*"
     print_subsection "$title"
-    bash -c "$*" 2>/dev/null || echo -e "${COLOR_FAILURE}❌ [!] Command failed or not available${COLOR_RESET}"
+    if [ -n "$USER_PASSWORD" ] && [[ "$cmd" == sudo* ]]; then
+        echo "$USER_PASSWORD" | bash -c "${cmd/sudo/sudo -S -p ''}" 2>/dev/null || echo -e "${COLOR_FAILURE}❌ [!] Command failed or not available${COLOR_RESET}"
+    else
+        bash -c "$cmd" 2>/dev/null || echo -e "${COLOR_FAILURE}❌ [!] Command failed or not available${COLOR_RESET}"
+    fi
     echo
 }
 
 run_cmd_safe() {
     local title="$1"
     shift
+    local cmd="$*"
     print_subsection "$title"
-    if ! bash -c "$*" 2>/dev/null; then
-        echo -e "${COLOR_FAILURE}❌ [!] $title - Command failed or not available${COLOR_RESET}"
+    if [ -n "$USER_PASSWORD" ] && [[ "$cmd" == sudo* ]]; then
+        if ! echo "$USER_PASSWORD" | bash -c "${cmd/sudo/sudo -S -p ''}" 2>/dev/null; then
+            echo -e "${COLOR_FAILURE}❌ [!] $title - Command failed or not available${COLOR_RESET}"
+        fi
+    else
+        if ! bash -c "$cmd" 2>/dev/null; then
+            echo -e "${COLOR_FAILURE}❌ [!] $title - Command failed or not available${COLOR_RESET}"
+        fi
     fi
     echo
 }
@@ -106,11 +139,11 @@ section_user_privileges() {
     run_cmd "Groups for ${TARGET_USER}" "groups ${TARGET_USER}"
     
     print_subsection "sudo Configuration (sudo -l)"
-    if sudo -l 2>&1 | grep -q "(ALL : ALL) ALL\|(ALL) ALL\|NOPASSWD"; then
+    if run_sudo -l 2>&1 | grep -q "(ALL : ALL) ALL\|(ALL) ALL\|NOPASSWD"; then
         add_highlight "High-privilege sudo rights found!"
-        sudo -l 2>&1
+        run_sudo -l 2>&1
     else
-        sudo -l 2>&1 || echo -e "${COLOR_FAILURE}❌ [!] sudo -l failed${COLOR_RESET}"
+        run_sudo -l 2>&1 || echo -e "${COLOR_FAILURE}❌ [!] sudo -l failed${COLOR_RESET}"
     fi
     
     run_cmd "/etc/sudoers Permissions" "ls -lah /etc/sudoers"
@@ -407,6 +440,11 @@ main() {
     echo -e "${COLOR_SECTION}================================================================================${COLOR_RESET}"
     echo -e "${COLOR_INFO}👤 Target User:${COLOR_RESET} ${TARGET_USER}"
     echo -e "${COLOR_INFO}📂 Search User:${COLOR_RESET} ${BOB_USER}"
+    if [ -n "$USER_PASSWORD" ]; then
+        echo -e "${COLOR_INFO}🔑 Password:    ${COLOR_RESET} [PROVIDED]"
+    else
+        echo -e "${COLOR_INFO}🔑 Password:    ${COLOR_RESET} [NOT PROVIDED]"
+    fi
     echo -e "${COLOR_INFO}⏰ Start Time: ${COLOR_RESET} $(date '+%Y-%m-%d %H:%M:%S')"
     if [ "$INTERACTIVE_MODE" = true ]; then
         echo -e "${COLOR_SUCCESS}🎮 Interactive Mode: ON (Pausing between sections)${COLOR_RESET}"
