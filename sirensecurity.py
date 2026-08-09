@@ -110,9 +110,51 @@ class SirenSecurity:
         self.print_section("10. USERS")
         self.run_cmd("passwd", "cat /etc/passwd")
 
+    def audit_ssh_controlmaster(self):
+        self.print_subsection("SSH ControlMaster & Session Socket Audit")
+
+        # 1. Check configs for ControlMaster/ControlPath settings
+        print(f"{COLOR_INFO}[*] Auditing SSH configs for ControlMaster / ControlPath settings...{COLOR_RESET}")
+        cm_found = False
+        cfg_cmd = "grep -iE 'ControlMaster|ControlPath|ControlPersist' ~/.ssh/config /home/*/.ssh/config /root/.ssh/config /etc/ssh/ssh_config /etc/ssh/ssh_config.d/* 2>/dev/null"
+        res = subprocess.run(cfg_cmd, shell=True, capture_output=True, text=True)
+        if res.stdout and res.stdout.strip():
+            cm_found = True
+            print(f"{COLOR_SUCCESS}🔍 [+] ControlMaster settings active:{COLOR_RESET}")
+            for line in res.stdout.strip().splitlines():
+                print(f"    {line}")
+            self.add_highlight("SSH ControlMaster directive configured in SSH configs")
+        else:
+            print("  [-] No explicit ControlMaster directives found in accessible config files.")
+        print()
+
+        # 2. Scan .ssh and system locations for Unix domain socket files
+        print(f"{COLOR_INFO}[*] Scanning .ssh and system directories for active SSH sockets...{COLOR_RESET}")
+        sock_cmd = "find ~/.ssh /tmp /var/tmp /run/user/$(id -u 2>/dev/null || echo 1000) /home/*/.ssh /root/.ssh -maxdepth 3 -type s 2>/dev/null"
+        res_sock = subprocess.run(sock_cmd, shell=True, capture_output=True, text=True)
+        sockets = [s for s in res_sock.stdout.strip().splitlines() if s] if res_sock.stdout else []
+        if sockets:
+            for sock in sockets:
+                print(f"{COLOR_SUCCESS}⚠️ [SECURITY RISK] Active Unix Domain Socket found: {sock}{COLOR_RESET}")
+                ls_res = subprocess.run(f"ls -lah '{sock}' 2>/dev/null", shell=True, capture_output=True, text=True)
+                if ls_res.stdout:
+                    print(f"    {ls_res.stdout.strip()}")
+                self.add_highlight(f"Active SSH Unix domain socket file found: {sock}")
+        else:
+            print("  [-] No active Unix domain sockets found in scanned directories.")
+        print()
+
+        # 3. Defensive Remediation Guidance
+        if cm_found or sockets:
+            print(f"{COLOR_INFO}🛡️ Defensive Remediation:{COLOR_RESET}")
+            print("   - Ensure socket directories (e.g. ~/.ssh/controlmaster) have strict 0700 permissions.")
+            print("   - Set 'ControlPersist no' or short timeout values if ControlMaster is required.")
+            print("   - Remove orphaned socket files when SSH sessions terminate.\n")
+
     def section_sensitive_files(self):
         self.print_section("11. SENSITIVE FILES")
         self.run_cmd("SSH Keys", "ls -lah ~/.ssh/ 2>/dev/null")
+        self.audit_ssh_controlmaster()
 
     def section_configs(self):
         self.print_section("12. CONFIGS")

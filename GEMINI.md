@@ -64,7 +64,12 @@ sudo ./sirensecurity.sh
 - **Safety**:
     - Use `run_cmd` or `run_cmd_safe` wrappers to handle command execution and potential failures gracefully.
     - Avoid destructive commands; the tool is strictly for reconnaissance.
-- **Portability**: Ensure commands work across different distributions (Ubuntu/Debian, RedHat/CentOS, Alpine). Use fallbacks (e.g., `netstat` vs `ss`).
+- **Line Endings & Windows Development**:
+    - **ALWAYS enforce Unix LF (`\n`) line endings** for all shell (`.sh`) and python scripts, even when editing on Windows. NEVER introduce Windows CRLF (`\r\n`) line endings.
+- **Portability & Cross-Platform (Linux & macOS)**:
+    - Ensure commands work seamlessly across Linux distributions (Ubuntu/Debian, RedHat/CentOS, Alpine, Arch) and macOS (Darwin/BSD).
+    - Account for BSD vs GNU utility differences (e.g. `sed`, `grep`, `find`, `stat`, `date`, `netstat` vs `ss`, `ip` vs `ifconfig`).
+    - Always use safe feature checks or fallback wrappers before invoking platform-specific commands.
 
 ## Testing Strategy
 

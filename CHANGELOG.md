@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## Version 2.1 - SSH ControlMaster & Session Socket Audit
+
+### Key Enhancements
+- **SSH ControlMaster & Session Socket Audit (`audit_ssh_controlmaster`)**:
+  - Scans user `.ssh` directories (`~/.ssh/`, `/home/*/.ssh`, `/root/.ssh`) and common system paths (`/tmp`, `/var/tmp`, `/run/user/*`) for active Unix domain socket files (`-type s`).
+  - Audits SSH client and system configuration files (`~/.ssh/config`, `/etc/ssh/ssh_config`, `/etc/ssh/sshd_config`) for `ControlMaster`, `ControlPath`, and `ControlPersist` directives.
+  - Highlights active socket exposures and configuration risks in the "High-Interest Findings" summary (`HIGHLIGHTS`).
+  - Provides defensive remediation guidance for socket permissions (0700) and lifecycle management.
+- **Expanded SSH Key Discovery**:
+  - Added checks for `id_ecdsa`, `id_ed25519`, and `known_hosts`.
+- **Environment & Line Ending Stability**:
+  - Enforced Unix LF line endings across shell scripts via `.gitattributes`.
+  - Added fallback `export TERM="${TERM:-xterm}"` and safe `clear` execution to prevent script exits in non-interactive shell environments.
+
 ## Version 2.0 - Structural Overhaul & Modularization
 
 ### Major Improvements

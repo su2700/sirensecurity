@@ -1,0 +1,8 @@
+# Auto-detect text files and normalize line endings
+* text=auto
+
+# Enforce Unix LF line endings for target execution environments (Linux & macOS)
+*.sh text eol=lf
+*.bash text eol=lf
+*.py text eol=lf
+*.md text eol=lf

@@ -5,6 +5,9 @@
 
 set -o errexit
 
+# Fallback TERM if not set in environment
+export TERM="${TERM:-xterm}"
+
 # Color codes
 COLOR_SECTION="\033[1;34m"    # Blue
 COLOR_SUBSECTION="\033[1;36m" # Cyan
@@ -291,11 +294,79 @@ section_users() {
     run_cmd "User Sessions" "w"
 }
 
+# Audit SSH ControlMaster configurations and active socket files
+audit_ssh_controlmaster() {
+    print_subsection "SSH ControlMaster & Session Socket Audit"
+
+    # 1. Audit SSH Client & System Configurations
+    echo -e "${COLOR_INFO}[*] Auditing SSH configs for ControlMaster / ControlPath settings...${COLOR_RESET}"
+    local cm_found=false
+    for cfg in ~/.ssh/config /home/*/.ssh/config /root/.ssh/config /etc/ssh/ssh_config /etc/ssh/ssh_config.d/*; do
+        if [ -f "$cfg" ]; then
+            local matches
+            matches=$(grep -iE "ControlMaster|ControlPath|ControlPersist" "$cfg" 2>/dev/null)
+            if [ -n "$matches" ]; then
+                cm_found=true
+                echo -e "${COLOR_SUCCESS}🔍 [+] ControlMaster settings active in: $cfg${COLOR_RESET}"
+                echo "$matches" | sed 's/^/    /'
+                add_highlight "SSH ControlMaster directive configured in $cfg"
+            fi
+        fi
+    done
+    if [ "$cm_found" = false ]; then
+        echo "  [-] No explicit ControlMaster directives found in accessible config files."
+    fi
+    echo
+
+    # 2. Scan .ssh and system locations for Unix domain socket files
+    echo -e "${COLOR_INFO}[*] Scanning .ssh and system directories for active SSH sockets...${COLOR_RESET}"
+    local target_dirs=(
+        "$HOME/.ssh"
+        "/tmp"
+        "/var/tmp"
+        "/run/user/$(id -u 2>/dev/null || echo 1000)"
+    )
+
+    # Include all user .ssh directories if accessible
+    for user_dir in /home/*/.ssh /root/.ssh; do
+        if [ -d "$user_dir" ]; then
+            target_dirs+=("$user_dir")
+        fi
+    done
+
+    local socket_count=0
+    for dir in "${target_dirs[@]}"; do
+        if [ -d "$dir" ]; then
+            while IFS= read -r sock; do
+                [ -z "$sock" ] && continue
+                socket_count=$((socket_count + 1))
+                echo -e "${COLOR_SUCCESS}⚠️ [SECURITY RISK] Active Unix Domain Socket found: $sock${COLOR_RESET}"
+                ls -lah "$sock" 2>/dev/null | sed 's/^/    /'
+                add_highlight "Active SSH Unix domain socket file found: $sock"
+            done < <(find "$dir" -maxdepth 3 -type s 2>/dev/null)
+        fi
+    done
+
+    if [ "$socket_count" -eq 0 ]; then
+        echo "  [-] No active Unix domain sockets found in scanned directories."
+    fi
+    echo
+
+    # 3. Defensive Remediation Guidance
+    if [ "$cm_found" = true ] || [ "$socket_count" -gt 0 ]; then
+        echo -e "${COLOR_INFO}🛡️ Defensive Remediation:${COLOR_RESET}"
+        echo "   - Ensure socket directories (e.g. ~/.ssh/controlmaster) have strict 0700 permissions."
+        echo "   - Set 'ControlPersist no' or short timeout values if ControlMaster is required."
+        echo "   - Remove orphaned socket files when SSH sessions terminate."
+        echo
+    fi
+}
+
 # 11. SENSITIVE FILES & DATA
 section_sensitive_files() {
     print_section "11. SENSITIVE FILES & DATA"
     print_subsection "SSH Keys & Configuration"
-    for file in ~/.ssh/id_rsa ~/.ssh/id_dsa ~/.ssh/id_rsa.pub ~/.ssh/id_dsa.pub ~/.ssh/authorized_keys; do
+    for file in ~/.ssh/id_rsa ~/.ssh/id_dsa ~/.ssh/id_ecdsa ~/.ssh/id_ed25519 ~/.ssh/id_rsa.pub ~/.ssh/authorized_keys ~/.ssh/known_hosts; do
         if [ -f "$file" ]; then
             echo -e "${COLOR_SUCCESS}🔓 [+] Found: $file${COLOR_RESET}"
             add_highlight "Found SSH key: $file"
@@ -306,6 +377,9 @@ section_sensitive_files() {
     run_cmd "SSH Client Config" "cat ~/.ssh/config"
     run_cmd "SSH System Config" "cat /etc/ssh/ssh_config"
     run_cmd "SSH Daemon Config" "cat /etc/ssh/sshd_config"
+
+    # Audit SSH ControlMaster and socket exposure
+    audit_ssh_controlmaster
     print_subsection "System SSH Keys"
     for file in /etc/ssh/ssh_host_*_key*; do
         if [ -f "$file" ]; then
@@ -434,7 +508,7 @@ section_misc() {
 
 # Main Execution Loop
 main() {
-    clear
+    [ -t 1 ] && clear 2>/dev/null || true
     echo -e "${COLOR_SECTION}================================================================================${COLOR_RESET}"
     echo -e "${COLOR_SECTION}             🛡️  SIREN Security - Linux Reconnaissance & Audit Tool${COLOR_RESET}"
     echo -e "${COLOR_SECTION}================================================================================${COLOR_RESET}"

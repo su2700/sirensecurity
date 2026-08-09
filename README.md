@@ -30,7 +30,7 @@ The project has been expanded to support multiple environments and legacy system
 8.  **File Permissions & Security**: SUID/SGID, sticky bits, world-writable files.
 9.  **File Systems & Mounts**: `mount`, `df`, `/etc/fstab`, NFS exports.
 10. **Users & Accounts**: `/etc/passwd`, `/etc/shadow` (if readable), UID 0 check.
-11. **Sensitive Files & Data**: SSH keys, command history (`.bash_history`), config files.
+11. **Sensitive Files & Data**: SSH keys, SSH ControlMaster & Session Socket Audit, command history (`.bash_history`), config files.
 12. **Service Configuration Files**: Web servers (Apache/Nginx), Databases (MySQL/Postgres).
 13. **Log Files & Directories**: `/var/log`, web logs, application directories.
 14. **Credential Search**: PHP database configs, grep-based password hunting in `/etc`.
